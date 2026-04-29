@@ -6,7 +6,7 @@ import { S3Storage, FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk
 const router = express.Router();
 
 // 初始化对象存储
-const storage = new S3Storage({
+const objectStorage = new S3Storage({
   endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
   accessKey: '',
   secretKey: '',
@@ -15,9 +15,9 @@ const storage = new S3Storage({
 });
 
 // 配置multer接收文件
-const multerStorage = multer.memoryStorage();
+const multerMemoryStorage = multer.memoryStorage();
 const upload = multer({
-  storage: multerStorage,
+  storage: multerMemoryStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB限制
   },
@@ -40,7 +40,7 @@ router.post('/ocr', upload.single('image'), async (req: Request, res: Response) 
     const fileName = `ocr/${Date.now()}_${req.file.originalname}`;
     console.log('开始上传到对象存储:', fileName);
 
-    const fileKey = await storage.uploadFile({
+    const fileKey = await objectStorage.uploadFile({
       fileContent: req.file.buffer,
       fileName,
       contentType: req.file.mimetype,
@@ -49,7 +49,7 @@ router.post('/ocr', upload.single('image'), async (req: Request, res: Response) 
     console.log('上传成功，文件key:', fileKey);
 
     // 2. 生成签名URL
-    const imageUrl = await storage.generatePresignedUrl({
+    const imageUrl = await objectStorage.generatePresignedUrl({
       key: fileKey,
       expireTime: 86400, // 1天有效期
     });

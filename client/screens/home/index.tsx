@@ -283,6 +283,7 @@ export default function HomeScreen() {
       formData.append('image', imageFile as any);
 
       console.log('开始OCR识别:', uri);
+      console.log('FormData内容:', formData);
 
       /**
        * 服务端文件：server/src/routes/image.ts
@@ -294,7 +295,20 @@ export default function HomeScreen() {
         body: formData,
       });
 
-      const data = await response.json();
+      console.log('响应状态:', response.status, response.statusText);
+      console.log('响应头:', Object.fromEntries(response.headers.entries()));
+
+      const responseText = await response.text();
+      console.log('响应原文:', responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('JSON解析失败:', parseError);
+        console.error('响应内容类型:', response.headers.get('content-type'));
+        throw new Error(`服务器返回了非JSON格式的内容: ${responseText.substring(0, 200)}`);
+      }
 
       console.log('OCR识别结果:', data.success ? `成功，提取文字: ${data.data.text.substring(0, 50)}...` : '失败');
 
@@ -306,7 +320,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('OCR识别失败:', error);
-      Alert.alert('错误', '图片上传失败');
+      Alert.alert('错误', `图片上传失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setLoading(false);
     }
