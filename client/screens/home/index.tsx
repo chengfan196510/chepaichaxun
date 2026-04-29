@@ -23,12 +23,11 @@ interface VehicleInfo {
 
 // 部门列表
 const DEPARTMENTS = [
-  { id: '教师', label: '教师车辆', color: '#2D6A4F' },
-  { id: '教务处', label: '教务处', color: '#D4A276' },
-  { id: '后勤处', label: '后勤处', color: '#E9C46A' },
-  { id: '财务处', label: '财务处', color: '#264653' },
-  { id: '保卫处', label: '保卫处', color: '#E76F51' },
-  { id: '学生处', label: '学生处', color: '#2A9D8F' },
+  { id: '教师车辆', label: '教师车辆', color: '#2D6A4F' },
+  { id: '后勤车辆', label: '后勤车辆', color: '#E9C46A' },
+  { id: '集团车辆', label: '集团车辆', color: '#D4A276' },
+  { id: '临时车辆', label: '临时车辆', color: '#E76F51' },
+  { id: '家长车辆', label: '家长车辆', color: '#2A9D8F' },
 ];
 
 export default function HomeScreen() {
@@ -41,7 +40,7 @@ export default function HomeScreen() {
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [webFileSelected, setWebFileSelected] = useState<boolean>(false);
   const [webFileName, setWebFileName] = useState<string>('');
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['教师', '后勤处']);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['教师车辆', '后勤车辆']);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   const toggleDepartment = (dept: string) => {
@@ -337,7 +336,6 @@ export default function HomeScreen() {
 
         {/* 部门筛选 */}
         <View style={styles.departmentSection}>
-          <Text style={styles.sectionTitle}>筛选部门</Text>
           <View style={styles.departmentGrid}>
             {DEPARTMENTS.map((dept) => (
               <TouchableOpacity
