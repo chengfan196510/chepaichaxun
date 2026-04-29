@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Alert, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Modal, Image, Dimensions } from 'react-native';
 import { Screen } from '@/components/Screen';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
@@ -8,6 +8,9 @@ import { FontAwesome6 } from '@expo/vector-icons';
 import { createFormDataFile } from '@/utils';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
 import * as DocumentPicker from 'expo-document-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
 
 interface VehicleInfo {
   id: string;
@@ -17,6 +20,16 @@ interface VehicleInfo {
   department?: string;
   description?: string;
 }
+
+// 部门列表
+const DEPARTMENTS = [
+  { id: '教师', label: '教师车辆', color: '#2D6A4F' },
+  { id: '教务处', label: '教务处', color: '#D4A276' },
+  { id: '后勤处', label: '后勤处', color: '#E9C46A' },
+  { id: '财务处', label: '财务处', color: '#264653' },
+  { id: '保卫处', label: '保卫处', color: '#E76F51' },
+  { id: '学生处', label: '学生处', color: '#2A9D8F' },
+];
 
 export default function HomeScreen() {
   const router = useSafeRouter();
@@ -28,24 +41,41 @@ export default function HomeScreen() {
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [webFileSelected, setWebFileSelected] = useState<boolean>(false);
   const [webFileName, setWebFileName] = useState<string>('');
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['教师', '后勤处']);
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const webFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const toggleDepartment = (dept: string) => {
+    if (selectedDepartments.includes(dept)) {
+      // 如果至少选中一个，才允许取消
+      if (selectedDepartments.length > 1) {
+        setSelectedDepartments(selectedDepartments.filter(d => d !== dept));
+      }
+    } else {
+      setSelectedDepartments([...selectedDepartments, dept]);
+    }
+  };
 
   const handleSearch = async () => {
-    if (!keyword.trim()) {
-      Alert.alert('提示', '请输入查询关键词');
-      return;
-    }
-
     setLoading(true);
     try {
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const params = new URLSearchParams();
+
+      if (keyword.trim()) {
+        params.append('keyword', keyword);
+      }
+
+      // 添加部门筛选
+      selectedDepartments.forEach(dept => {
+        params.append('departments', dept);
+      });
+
       /**
        * 服务端文件：server/src/routes/vehicles.ts
        * 接口：GET /api/v1/vehicles
-       * Query 参数：keyword?: string
+       * Query 参数：keyword?: string, departments?: string[]
        */
-      const response = await fetch(`${baseUrl}/api/v1/vehicles?keyword=${encodeURIComponent(keyword)}`);
+      const response = await fetch(`${baseUrl}/api/v1/vehicles?${params.toString()}`);
       const data = await response.json();
 
       if (data.success) {
@@ -125,12 +155,10 @@ export default function HomeScreen() {
       const uri = currentRecording.getURI();
       if (!uri) return;
 
-      // 读取音频文件
       const audioData = await (FileSystem as any).readAsStringAsync(uri, {
         encoding: 'base64',
       });
 
-      // 上传到服务器进行语音识别
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
       const audioFile = await createFormDataFile(uri, 'audio.m4a', 'audio/m4a');
       const formData = new FormData();
@@ -175,7 +203,6 @@ export default function HomeScreen() {
 
       const uri = result.assets[0].uri;
 
-      // 上传图片到服务器进行OCR识别
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
       const imageFile = await createFormDataFile(uri, 'image.jpg', 'image/jpeg');
       const formData = new FormData();
@@ -204,7 +231,6 @@ export default function HomeScreen() {
 
   const handlePickImportFile = async () => {
     if (Platform.OS === 'web') {
-      // Web端使用原生文件选择器
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.xlsx,.xls,.csv';
@@ -252,19 +278,12 @@ export default function HomeScreen() {
       const formData = new FormData();
 
       if (Platform.OS === 'web') {
-        // Web端直接使用File对象
         formData.append('file', selectedFile);
       } else {
-        // 移动端需要转换为FormDataFile
         const file = await createFormDataFile(selectedFile.uri, selectedFile.name, selectedFile.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         formData.append('file', file as any);
       }
 
-      /**
-       * 服务端文件：server/src/routes/vehicles.ts
-       * 接口：POST /api/v1/vehicles/import
-       * Body 参数：file: File (Excel文件)
-       */
       const response = await fetch(`${baseUrl}/api/v1/vehicles/import`, {
         method: 'POST',
         body: formData,
@@ -275,7 +294,6 @@ export default function HomeScreen() {
       if (data.success) {
         let message = `总数据：${data.data.total} 条\n成功导入：${data.data.inserted} 条\n跳过：${data.data.skipped} 条`;
 
-        // 如果有跳过的车牌号，显示详细信息
         if (data.data.skipped > 0 && data.data.skippedDetails && data.data.skippedDetails.length > 0) {
           message += `\n\n跳过的车牌号：\n${data.data.skippedDetails.join('\n')}`;
         }
@@ -285,7 +303,7 @@ export default function HomeScreen() {
         setSelectedFile(null);
         setWebFileSelected(false);
         setWebFileName('');
-        handleSearch(); // 刷新列表
+        handleSearch();
       } else {
         Alert.alert('导入失败', data.error || '服务器错误');
       }
@@ -299,307 +317,389 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* 标题 */}
-          <View style={styles.header}>
-            <View style={styles.headerTop}>
-              <View style={styles.headerText}>
-                <Text style={styles.title}>车牌查询</Text>
-                <Text style={styles.subtitle}>快速查找学校车辆信息</Text>
-              </View>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* 主题图片区域 */}
+        <View style={styles.heroContainer}>
+          <Image
+            source={{ uri: 'https://images.unsplash.com/photo-1577563908411-5077b6dc7624?w=1200&h=400&fit=crop' }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+          <LinearGradient
+            colors={['rgba(45, 106, 79, 0.85)', 'rgba(212, 162, 118, 0.75)']}
+            style={styles.heroOverlay}
+          />
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>🚗 校园车辆查询</Text>
+            <Text style={styles.heroSubtitle}>快速查找学校车辆信息</Text>
+          </View>
+        </View>
+
+        {/* 部门筛选 */}
+        <View style={styles.departmentSection}>
+          <Text style={styles.sectionTitle}>筛选部门</Text>
+          <View style={styles.departmentGrid}>
+            {DEPARTMENTS.map((dept) => (
               <TouchableOpacity
-                style={styles.importButton}
-                onPress={() => setImportModalVisible(true)}
+                key={dept.id}
+                style={[
+                  styles.departmentButton,
+                  selectedDepartments.includes(dept.id) && styles.departmentButtonSelected,
+                  { borderColor: dept.color },
+                  selectedDepartments.includes(dept.id) && { backgroundColor: dept.color },
+                ]}
+                onPress={() => toggleDepartment(dept.id)}
               >
-                <FontAwesome6 name="file-import" size={20} color="#111111" />
-                <Text style={styles.importButtonText}>导入</Text>
+                <Text
+                  style={[
+                    styles.departmentButtonText,
+                    selectedDepartments.includes(dept.id) && styles.departmentButtonTextSelected,
+                  ]}
+                >
+                  {dept.label}
+                </Text>
               </TouchableOpacity>
-            </View>
+            ))}
+          </View>
+        </View>
+
+        {/* 搜索区域 */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputWrapper}>
+            <FontAwesome6 name="search" size={18} color="#8B7D6B" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="输入车主姓名或车牌号"
+              placeholderTextColor="#C4B8A8"
+              value={keyword}
+              onChangeText={setKeyword}
+              onSubmitEditing={handleSearch}
+            />
           </View>
 
-          {/* 输入区域 */}
-          <View style={styles.inputContainer}>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="输入车主姓名或车牌号"
-                placeholderTextColor="#CCCCCC"
-                value={keyword}
-                onChangeText={setKeyword}
-                onSubmitEditing={handleSearch}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={recording ? stopRecording : startRecording}
+            >
+              <FontAwesome6
+                name={recording ? "microphone-lines" : "microphone"}
+                size={18}
+                color={recording ? "#E76F51" : "#2D6A4F"}
               />
-            </View>
+            </TouchableOpacity>
 
-            {/* 操作按钮 */}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={recording ? stopRecording : startRecording}
-              >
-                <FontAwesome6
-                  name={recording ? "microphone-lines" : "microphone"}
-                  size={20}
-                  color={recording ? "#FF4444" : "#111111"}
-                />
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleImagePick}
+            >
+              <FontAwesome6 name="camera" size={18} color="#2D6A4F" />
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={handleImagePick}
-              >
-                <FontAwesome6 name="camera" size={20} color="#111111" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.searchButton}
-                onPress={handleSearch}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.searchButtonText}>查询</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.searchButton}
+              onPress={handleSearch}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.searchButtonText}>查询</Text>
+              )}
+            </TouchableOpacity>
           </View>
+        </View>
 
-          {/* 结果列表 */}
-          {results.length > 0 && (
-            <View style={styles.resultsContainer}>
-              <Text style={styles.resultsTitle}>查询结果 ({results.length})</Text>
-              {results.map((item, index) => (
-                <View key={item.id} style={styles.resultItem}>
-                  <View style={styles.resultHeader}>
-                    <Text style={styles.licensePlate}>{item.license_plate}</Text>
+        {/* 结果列表 */}
+        {results.length > 0 && (
+          <View style={styles.resultsSection}>
+            <Text style={styles.resultsTitle}>查询结果 ({results.length})</Text>
+            {results.map((item) => (
+              <View key={item.id} style={styles.resultCard}>
+                <View style={styles.resultHeader}>
+                  <View style={styles.resultLeft}>
+                    <View style={styles.plateBadge}>
+                      <Text style={styles.plateText}>{item.license_plate}</Text>
+                    </View>
                     <Text style={styles.ownerName}>{item.owner_name}</Text>
                   </View>
-                  {item.phone && (
-                    <Text style={styles.resultDetail}>
-                      <FontAwesome6 name="phone" size={14} color="#888888" /> {item.phone}
-                    </Text>
-                  )}
-                  {item.department && (
-                    <Text style={styles.resultDetail}>
-                      <FontAwesome6 name="building" size={14} color="#888888" /> {item.department}
-                    </Text>
-                  )}
-                  {item.description && (
-                    <Text style={styles.resultDescription}>{item.description}</Text>
-                  )}
+                  <View style={styles.departmentTag}>
+                    <Text style={styles.departmentTagText}>{item.department || '未分类'}</Text>
+                  </View>
                 </View>
-              ))}
-            </View>
-          )}
+                {item.phone && (
+                  <View style={styles.resultDetail}>
+                    <FontAwesome6 name="phone" size={14} color="#8B7D6B" />
+                    <Text style={styles.resultDetailText}>{item.phone}</Text>
+                  </View>
+                )}
+                {item.description && (
+                  <Text style={styles.resultDescription}>{item.description}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
-          {/* 提示信息 */}
-          {results.length === 0 && keyword.trim() === '' && (
-            <View style={styles.emptyContainer}>
-              <FontAwesome6 name="car" size={64} color="#ECECEC" />
-              <Text style={styles.emptyText}>请输入关键词查询车辆信息</Text>
-              <Text style={styles.emptySubtext}>支持车主姓名、车牌号、语音输入、拍照识别</Text>
-            </View>
-          )}
-        </ScrollView>
+        {/* 空状态 */}
+        {results.length === 0 && keyword.trim() === '' && (
+          <View style={styles.emptyState}>
+            <FontAwesome6 name="car-side" size={64} color="#D4A276" />
+            <Text style={styles.emptyText}>请输入关键词查询车辆信息</Text>
+            <Text style={styles.emptySubtext}>支持车主姓名、车牌号、语音输入、拍照识别</Text>
+          </View>
+        )}
 
-        {/* 导入模态框 */}
-        <Modal
-          visible={importModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setImportModalVisible(false)}
+        {/* 导入按钮 */}
+        <TouchableOpacity
+          style={styles.importFloatingButton}
+          onPress={() => setImportModalVisible(true)}
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>数据导入</Text>
-                <TouchableOpacity onPress={() => setImportModalVisible(false)}>
-                  <FontAwesome6 name="xmark" size={20} color="#111111" />
-                </TouchableOpacity>
+          <FontAwesome6 name="file-import" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* 导入模态框 */}
+      <Modal
+        visible={importModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setImportModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>数据导入</Text>
+              <TouchableOpacity onPress={() => setImportModalVisible(false)}>
+                <FontAwesome6 name="xmark" size={20} color="#3D3229" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoTitle}>Excel文件格式要求</Text>
+                <Text style={styles.infoText}>• 必填字段：车主姓名、车牌号</Text>
+                <Text style={styles.infoText}>• 选填字段：电话、部门、描述</Text>
+                <Text style={styles.infoText}>• 支持 .xlsx, .xls, .csv 格式</Text>
               </View>
 
-              <ScrollView style={styles.modalBody}>
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoTitle}>Excel文件格式要求</Text>
-                  <Text style={styles.infoText}>• 必填字段：车主姓名、车牌号</Text>
-                  <Text style={styles.infoText}>• 选填字段：电话、部门、描述</Text>
-                  <Text style={styles.infoText}>• 支持 .xlsx, .xls, .csv 格式</Text>
-                </View>
-
-                {webFileSelected && webFileName ? (
-                  <View style={styles.filePreview}>
-                    <FontAwesome6 name="file-excel" size={48} color="#10B981" />
-                    <Text style={styles.fileName}>{webFileName}</Text>
-                    <TouchableOpacity
-                      style={styles.changeButton}
-                      onPress={handlePickImportFile}
-                    >
-                      <Text style={styles.changeButtonText}>更换文件</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
+              {webFileSelected && webFileName ? (
+                <View style={styles.filePreview}>
+                  <FontAwesome6 name="file-excel" size={48} color="#2D6A4F" />
+                  <Text style={styles.fileName}>{webFileName}</Text>
                   <TouchableOpacity
-                    style={styles.uploadButton}
+                    style={styles.changeButton}
                     onPress={handlePickImportFile}
                   >
-                    <FontAwesome6 name="cloud-arrow-up" size={48} color="#888888" />
-                    <Text style={styles.uploadButtonText}>点击选择Excel文件</Text>
-                    <Text style={styles.uploadButtonSubtext}>支持 .xlsx, .xls, .csv</Text>
+                    <Text style={styles.changeButtonText}>更换文件</Text>
                   </TouchableOpacity>
-                )}
-              </ScrollView>
-
-              <View style={styles.modalFooter}>
+                </View>
+              ) : (
                 <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setImportModalVisible(false);
-                    setSelectedFile(null);
-                    setWebFileSelected(false);
-                    setWebFileName('');
-                  }}
+                  style={styles.uploadButton}
+                  onPress={handlePickImportFile}
                 >
-                  <Text style={styles.cancelButtonText}>取消</Text>
+                  <FontAwesome6 name="cloud-arrow-up" size={48} color="#C4B8A8" />
+                  <Text style={styles.uploadButtonText}>点击选择Excel文件</Text>
+                  <Text style={styles.uploadButtonSubtext}>支持 .xlsx, .xls, .csv</Text>
                 </TouchableOpacity>
-                {webFileSelected && (
-                  <TouchableOpacity
-                    style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                    onPress={handleImport}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.submitButtonText}>导入</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setImportModalVisible(false);
+                  setSelectedFile(null);
+                  setWebFileSelected(false);
+                  setWebFileName('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>取消</Text>
+              </TouchableOpacity>
+              {webFileSelected && (
+                <TouchableOpacity
+                  style={styles.submitButton}
+                  onPress={handleImport}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>导入</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-        </Modal>
-      </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
-  header: {
-    marginBottom: 32,
+  // 主题图片区域
+  heroContainer: {
+    position: 'relative',
+    height: 220,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
-  headerText: {
-    flex: 1,
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
-  title: {
-    fontSize: 32,
+  heroContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 24,
+    paddingBottom: 32,
+  },
+  heroTitle: {
+    fontSize: 28,
     fontWeight: '700',
-    color: '#111111',
-    letterSpacing: -0.5,
+    color: '#FFFFFF',
     marginBottom: 8,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
-  subtitle: {
-    fontSize: 15,
+  heroSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '400',
-    color: '#888888',
-    lineHeight: 24,
   },
-  importButton: {
+  // 部门筛选
+  departmentSection: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3D3229',
+    marginBottom: 16,
+  },
+  departmentGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  departmentButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#F7F7F7',
-    borderRadius: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#C4B8A8',
+    backgroundColor: '#FDF8F0',
   },
-  importButtonText: {
+  departmentButtonSelected: {
+    borderWidth: 0,
+  },
+  departmentButtonText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#111111',
+    fontWeight: '600',
+    color: '#8B7D6B',
   },
-  inputContainer: {
-    marginBottom: 32,
+  departmentButtonTextSelected: {
+    color: '#FFFFFF',
   },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#ECECEC',
-    borderRadius: 12,
-    marginBottom: 16,
-    backgroundColor: '#F7F7F7',
-  },
-  input: {
-    height: 56,
+  // 搜索区域
+  searchContainer: {
     paddingHorizontal: 20,
-    fontSize: 16,
-    color: '#111111',
+    marginTop: 24,
   },
-  buttonRow: {
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+    shadowColor: '#3D3229',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#3D3229',
+    padding: 0,
+  },
+  actionButtons: {
     flexDirection: 'row',
     gap: 12,
   },
   iconButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#F7F7F7',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ECECEC',
+    shadowColor: '#3D3229',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   searchButton: {
     flex: 1,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#111111',
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#2D6A4F',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#2D6A4F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  resultsContainer: {
-    gap: 16,
+  // 结果列表
+  resultsSection: {
+    paddingHorizontal: 20,
+    marginTop: 24,
   },
   resultsTitle: {
     fontSize: 17,
-    fontWeight: '600',
-    color: '#111111',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#3D3229',
+    marginBottom: 16,
   },
-  resultItem: {
+  resultCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    shadowColor: '#3D3229',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   resultHeader: {
     flexDirection: 'row',
@@ -607,58 +707,109 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  licensePlate: {
-    fontSize: 20,
+  resultLeft: {
+    flex: 1,
+  },
+  plateBadge: {
+    backgroundColor: 'rgba(45, 106, 79, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(45, 106, 79, 0.2)',
+  },
+  plateText: {
+    fontSize: 16,
     fontWeight: '700',
-    color: '#111111',
+    color: '#2D6A4F',
   },
   ownerName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111111',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#3D3229',
+  },
+  departmentTag: {
+    backgroundColor: 'rgba(212, 162, 118, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 162, 118, 0.3)',
+  },
+  departmentTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#D4A276',
   },
   resultDetail: {
-    fontSize: 14,
-    color: '#888888',
-    lineHeight: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  resultDescription: {
+  resultDetailText: {
     fontSize: 14,
-    color: '#888888',
-    lineHeight: 21,
+    color: '#8B7D6B',
+    marginLeft: 6,
+  },
+  resultDescription: {
+    fontSize: 13,
+    color: '#8B7D6B',
+    lineHeight: 20,
     marginTop: 8,
     paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ECECEC',
+    borderTopWidth: 1,
+    borderTopColor: '#F1EBE0',
   },
-  emptyContainer: {
+  // 空状态
+  emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 64,
+    paddingHorizontal: 20,
   },
   emptyText: {
     fontSize: 17,
-    fontWeight: '500',
-    color: '#888888',
+    fontWeight: '600',
+    color: '#3D3229',
     marginTop: 24,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#CCCCCC',
+    fontSize: 13,
+    color: '#8B7D6B',
     marginTop: 8,
     textAlign: 'center',
+    lineHeight: 20,
   },
+  // 悬浮导入按钮
+  importFloatingButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 100,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E9C46A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#E9C46A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // 模态框
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(61, 50, 41, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: '#FDF8F0',
+    borderRadius: 24,
     width: '100%',
     maxHeight: '80%',
   },
@@ -668,12 +819,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#ECECEC',
+    borderBottomColor: '#F1EBE0',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111111',
+    fontWeight: '700',
+    color: '#3D3229',
   },
   modalBody: {
     flex: 1,
@@ -684,96 +835,92 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#ECECEC',
+    borderTopColor: '#F1EBE0',
   },
   infoCard: {
-    backgroundColor: '#F7F7F7',
-    borderRadius: 12,
+    backgroundColor: '#F1EBE0',
+    borderRadius: 16,
     padding: 16,
     marginBottom: 20,
   },
   infoTitle: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#111111',
+    fontWeight: '700',
+    color: '#3D3229',
     marginBottom: 8,
   },
   infoText: {
     fontSize: 13,
-    color: '#888888',
+    color: '#8B7D6B',
     lineHeight: 20,
     marginBottom: 4,
   },
   uploadButton: {
     borderWidth: 2,
-    borderColor: '#ECECEC',
-    borderRadius: 12,
-    paddingVertical: 32,
+    borderColor: '#C4B8A8',
+    borderRadius: 20,
+    paddingVertical: 40,
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FDF8F0',
+    borderStyle: 'dashed',
   },
   uploadButtonText: {
     fontSize: 15,
-    fontWeight: '500',
-    color: '#111111',
+    fontWeight: '600',
+    color: '#3D3229',
     marginTop: 12,
   },
   uploadButtonSubtext: {
     fontSize: 13,
-    color: '#888888',
+    color: '#C4B8A8',
     marginTop: 4,
   },
   filePreview: {
-    backgroundColor: '#F7F7F7',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
   },
   fileName: {
     fontSize: 15,
-    fontWeight: '500',
-    color: '#111111',
+    fontWeight: '600',
+    color: '#3D3229',
     marginTop: 12,
   },
   changeButton: {
     marginTop: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ECECEC',
+    backgroundColor: '#2D6A4F',
+    borderRadius: 12,
   },
   changeButtonText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#111111',
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#F7F7F7',
+    borderRadius: 14,
+    backgroundColor: '#F1EBE0',
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#111111',
+    fontWeight: '700',
+    color: '#3D3229',
   },
   submitButton: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#111111',
+    borderRadius: 14,
+    backgroundColor: '#2D6A4F',
     alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
   },
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
