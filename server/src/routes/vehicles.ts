@@ -36,25 +36,27 @@ router.get('/', async (req: Request, res: Response) => {
     const client = getSupabaseClient();
     let query = client.from('vehicle_infos').select('*');
 
-    // 如果没有关键词和部门筛选，返回所有记录（限制100条）
-    if (!keyword && !departments) {
-      query = query.order('created_at', { ascending: false }).limit(100);
-    } else {
-      // 处理部门筛选
-      if (departments) {
-        const deptArray = Array.isArray(departments) ? departments : [departments];
-        if (deptArray.length > 0) {
-          // 使用in函数筛选部门
-          query = query.in('department', deptArray);
-        }
-      }
+    // 如果没有关键词，不返回任何结果
+    if (!keyword || keyword.trim() === '') {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
 
-      // 处理关键词搜索（如果有）
-      if (keyword && keyword.trim() !== '') {
-        // 注意：不能在in()上使用or()，需要改用其他方式
-        // 先获取所有匹配部门的数据，然后在应用层筛选
-        // 或者使用raw query，这里我们先简单处理
-      }
+    // 如果没有部门筛选，也不返回任何结果
+    if (!departments) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // 处理部门筛选
+    const deptArray = Array.isArray(departments) ? departments : [departments];
+    if (deptArray.length > 0) {
+      // 使用in函数筛选部门
+      query = query.in('department', deptArray);
     }
 
     // 执行查询
