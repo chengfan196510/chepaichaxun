@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Modal, Image, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Modal, Image, Dimensions, Platform } from 'react-native';
 import { Screen } from '@/components/Screen';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const [webFileName, setWebFileName] = useState<string>('');
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['集团车辆', '教师车辆', '后勤车辆']);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const toggleDepartment = (dept: string) => {
     if (selectedDepartments.includes(dept)) {
@@ -230,18 +231,36 @@ export default function HomeScreen() {
 
   const handlePickImportFile = async () => {
     if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.xlsx,.xls,.csv';
-      input.onchange = (e: any) => {
-        const file = e.target.files[0];
-        if (file) {
-          setSelectedFile(file);
-          setWebFileSelected(true);
-          setWebFileName(file.name);
+      try {
+        // 创建新的input元素
+        if (!fileInputRef.current) {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.xlsx,.xls,.csv';
+          input.style.display = 'none';
+          input.id = 'file-import-input';
+          fileInputRef.current = input;
+          document.body.appendChild(input);
         }
-      };
-      input.click();
+
+        const handleFileChange = (e: Event) => {
+          const target = e.target as HTMLInputElement;
+          const file = target.files?.[0];
+          if (file) {
+            setSelectedFile(file);
+            setWebFileSelected(true);
+            setWebFileName(file.name);
+          }
+          // 清理事件监听器
+          fileInputRef.current?.removeEventListener('change', handleFileChange);
+        };
+
+        fileInputRef.current.addEventListener('change', handleFileChange);
+        fileInputRef.current.click();
+      } catch (error) {
+        console.error('文件选择失败:', error);
+        Alert.alert('错误', '文件选择失败');
+      }
     } else {
       try {
         const result = await DocumentPicker.getDocumentAsync({
@@ -861,6 +880,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FDF8F0',
     borderStyle: 'dashed',
+    cursor: 'pointer',
+    minHeight: 150,
+    justifyContent: 'center',
   },
   uploadButtonText: {
     fontSize: 15,
