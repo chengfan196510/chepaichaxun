@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Screen } from '@/components/Screen';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -26,7 +26,10 @@ export default function HomeScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [webFileSelected, setWebFileSelected] = useState<boolean>(false);
+  const [webFileName, setWebFileName] = useState<string>('');
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const webFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSearch = async () => {
     if (!keyword.trim()) {
@@ -200,22 +203,40 @@ export default function HomeScreen() {
   };
 
   const handlePickImportFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'application/vnd.ms-excel',
-          'text/csv',
-        ],
-        copyToCacheDirectory: true,
-      });
+    if (Platform.OS === 'web') {
+      // Web端使用原生文件选择器
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx,.xls,.csv';
+      input.onchange = (e: any) => {
+        const file = e.target.files[0];
+        if (file) {
+          setSelectedFile(file);
+          setWebFileSelected(true);
+          setWebFileName(file.name);
+        }
+      };
+      input.click();
+    } else {
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'text/csv',
+          ],
+          copyToCacheDirectory: true,
+        });
 
-      if (result.canceled) return;
+        if (result.canceled) return;
 
-      setSelectedFile(result.assets[0]);
-    } catch (error) {
-      console.error('文件选择失败:', error);
-      Alert.alert('错误', '文件选择失败');
+        setSelectedFile(result.assets[0]);
+        setWebFileSelected(true);
+        setWebFileName(result.assets[0].name);
+      } catch (error) {
+        console.error('文件选择失败:', error);
+        Alert.alert('错误', '文件选择失败');
+      }
     }
   };
 
@@ -228,9 +249,16 @@ export default function HomeScreen() {
     setLoading(true);
     try {
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
-      const file = await createFormDataFile(selectedFile.uri, selectedFile.name, selectedFile.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       const formData = new FormData();
-      formData.append('file', file as any);
+
+      if (Platform.OS === 'web') {
+        // Web端直接使用File对象
+        formData.append('file', selectedFile);
+      } else {
+        // 移动端需要转换为FormDataFile
+        const file = await createFormDataFile(selectedFile.uri, selectedFile.name, selectedFile.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        formData.append('file', file as any);
+      }
 
       /**
        * 服务端文件：server/src/routes/vehicles.ts
@@ -251,6 +279,8 @@ export default function HomeScreen() {
         );
         setImportModalVisible(false);
         setSelectedFile(null);
+        setWebFileSelected(false);
+        setWebFileName('');
         handleSearch(); // 刷新列表
       } else {
         Alert.alert('导入失败', data.error || '服务器错误');
@@ -282,13 +312,7 @@ export default function HomeScreen() {
               </View>
               <TouchableOpacity
                 style={styles.importButton}
-                onPress={() => {
-                  if (Platform.OS === 'web') {
-                    Alert.alert('提示', '导入功能仅在移动端可用');
-                  } else {
-                    setImportModalVisible(true);
-                  }
-                }}
+                onPress={() => setImportModalVisible(true)}
               >
                 <FontAwesome6 name="file-import" size={20} color="#111111" />
                 <Text style={styles.importButtonText}>导入</Text>
@@ -405,10 +429,10 @@ export default function HomeScreen() {
                   <Text style={styles.infoText}>• 支持 .xlsx, .xls, .csv 格式</Text>
                 </View>
 
-                {selectedFile ? (
+                {webFileSelected && webFileName ? (
                   <View style={styles.filePreview}>
                     <FontAwesome6 name="file-excel" size={48} color="#10B981" />
-                    <Text style={styles.fileName}>{selectedFile.name}</Text>
+                    <Text style={styles.fileName}>{webFileName}</Text>
                     <TouchableOpacity
                       style={styles.changeButton}
                       onPress={handlePickImportFile}
@@ -423,6 +447,7 @@ export default function HomeScreen() {
                   >
                     <FontAwesome6 name="cloud-arrow-up" size={48} color="#888888" />
                     <Text style={styles.uploadButtonText}>点击选择Excel文件</Text>
+                    <Text style={styles.uploadButtonSubtext}>支持 .xlsx, .xls, .csv</Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
@@ -433,11 +458,13 @@ export default function HomeScreen() {
                   onPress={() => {
                     setImportModalVisible(false);
                     setSelectedFile(null);
+                    setWebFileSelected(false);
+                    setWebFileName('');
                   }}
                 >
                   <Text style={styles.cancelButtonText}>取消</Text>
                 </TouchableOpacity>
-                {selectedFile && (
+                {webFileSelected && (
                   <TouchableOpacity
                     style={[styles.submitButton, loading && styles.submitButtonDisabled]}
                     onPress={handleImport}
@@ -686,6 +713,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#111111',
     marginTop: 12,
+  },
+  uploadButtonSubtext: {
+    fontSize: 13,
+    color: '#888888',
+    marginTop: 4,
   },
   filePreview: {
     backgroundColor: '#F7F7F7',
