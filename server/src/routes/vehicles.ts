@@ -58,7 +58,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     // 执行查询
-    query = query.order('created_at', { ascending: false }).limit(100);
+    query = query.order('created_at', { ascending: false }).limit(1000);
 
     const { data, error } = await query;
 

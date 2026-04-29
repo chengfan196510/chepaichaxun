@@ -7,6 +7,30 @@ import imageRouter from "./routes/image";
 const app = express();
 const port = process.env.PORT || 9091;
 
+// 配置query parser以正确处理多个同名参数
+app.set('query parser', (qs: string | null) => {
+  if (!qs) return {};
+  const query: Record<string, string | string[]> = {};
+  const pairs = qs.split('&');
+  for (const pair of pairs) {
+    const [key, value] = pair.split('=');
+    if (!key) continue;
+    const decodedKey = decodeURIComponent(key);
+    const decodedValue = value ? decodeURIComponent(value) : '';
+    if (query[decodedKey]) {
+      // 如果已存在，转为数组或追加到数组
+      if (Array.isArray(query[decodedKey])) {
+        (query[decodedKey] as string[]).push(decodedValue);
+      } else {
+        query[decodedKey] = [query[decodedKey] as string, decodedValue];
+      }
+    } else {
+      query[decodedKey] = decodedValue;
+    }
+  }
+  return query;
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
