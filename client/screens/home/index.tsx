@@ -4,6 +4,7 @@ import { Screen } from '@/components/Screen';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { FontAwesome6 } from '@expo/vector-icons';
 import { createFormDataFile } from '@/utils';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
@@ -236,13 +237,13 @@ export default function HomeScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.5, // 降低初始质量
       });
 
       if (result.canceled) return;
 
       const uri = result.assets[0].uri;
-      await processImage(uri);
+      await compressAndProcessImage(uri);
     } catch (error) {
       console.error('拍照失败:', error);
       Alert.alert('错误', '拍照失败');
@@ -260,16 +261,49 @@ export default function HomeScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.5, // 降低初始质量
       });
 
       if (result.canceled) return;
 
       const uri = result.assets[0].uri;
-      await processImage(uri);
+      await compressAndProcessImage(uri);
     } catch (error) {
       console.error('选择图片失败:', error);
       Alert.alert('错误', '选择图片失败');
+    }
+  };
+
+  const compressAndProcessImage = async (uri: string) => {
+    try {
+      console.log('开始压缩图片:', uri);
+
+      // 压缩图片：调整大小和质量
+      const manipResult = await ImageManipulator.manipulateAsync(
+        uri,
+        [
+          {
+            resize: {
+              width: 1024, // 最大宽度1024像素
+            },
+          },
+        ],
+        {
+          compress: 0.7, // 压缩质量
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: false,
+        }
+      );
+
+      console.log('图片压缩完成:', manipResult.uri);
+      console.log('原始URI:', uri);
+      console.log('压缩后URI:', manipResult.uri);
+
+      // 使用压缩后的图片进行处理
+      await processImage(manipResult.uri);
+    } catch (error) {
+      console.error('图片压缩失败:', error);
+      Alert.alert('错误', '图片处理失败');
     }
   };
 
