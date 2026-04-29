@@ -203,6 +203,29 @@ export default function HomeScreen() {
   };
 
   const handleImagePick = async () => {
+    // 显示选择对话框：拍照还是从相册选择
+    Alert.alert(
+      '选择图片来源',
+      '请选择图片来源',
+      [
+        {
+          text: '拍照',
+          onPress: () => handlePickFromCamera(),
+        },
+        {
+          text: '从相册选择',
+          onPress: () => handlePickFromLibrary(),
+        },
+        {
+          text: '取消',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const handlePickFromCamera = async () => {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -219,13 +242,53 @@ export default function HomeScreen() {
       if (result.canceled) return;
 
       const uri = result.assets[0].uri;
+      await processImage(uri);
+    } catch (error) {
+      console.error('拍照失败:', error);
+      Alert.alert('错误', '拍照失败');
+    }
+  };
+
+  const handlePickFromLibrary = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('提示', '需要相册权限才能从相册选择图片');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      const uri = result.assets[0].uri;
+      await processImage(uri);
+    } catch (error) {
+      console.error('选择图片失败:', error);
+      Alert.alert('错误', '选择图片失败');
+    }
+  };
+
+  const processImage = async (uri: string) => {
+    try {
+      setLoading(true);
 
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
       const imageFile = await createFormDataFile(uri, 'image.jpg', 'image/jpeg');
       const formData = new FormData();
       formData.append('image', imageFile as any);
 
-      setLoading(true);
+      console.log('开始OCR识别:', uri);
+
+      /**
+       * 服务端文件：server/src/routes/image.ts
+       * 接口：POST /api/v1/image/ocr
+       * Body 参数：image: File (图片文件)
+       */
       const response = await fetch(`${baseUrl}/api/v1/image/ocr`, {
         method: 'POST',
         body: formData,
@@ -233,10 +296,13 @@ export default function HomeScreen() {
 
       const data = await response.json();
 
-      if (data.success) {
+      console.log('OCR识别结果:', data.success ? `成功，提取文字: ${data.data.text.substring(0, 50)}...` : '失败');
+
+      if (data.success && data.data.text) {
         setKeyword(data.data.text);
+        Alert.alert('识别成功', `已识别到：${data.data.text}`);
       } else {
-        Alert.alert('提示', data.error || 'OCR功能暂时不可用，请使用键盘输入');
+        Alert.alert('提示', data.error || '未识别到车牌号，请重新拍照或选择图片');
       }
     } catch (error) {
       console.error('OCR识别失败:', error);
