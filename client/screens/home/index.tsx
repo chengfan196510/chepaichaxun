@@ -59,24 +59,30 @@ export default function HomeScreen() {
     setLoading(true);
     try {
       const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
-      const params = new URLSearchParams();
+      const params: string[] = [];
 
       if (keyword.trim()) {
-        params.append('keyword', keyword);
+        params.push(`keyword=${encodeURIComponent(keyword)}`);
       }
 
-      // 添加部门筛选
+      // 添加部门筛选 - 手动构建参数
       selectedDepartments.forEach(dept => {
-        params.append('departments', dept);
+        params.push(`departments=${encodeURIComponent(dept)}`);
       });
+
+      const fullUrl = `${baseUrl}/api/v1/vehicles?${params.join('&')}`;
+      console.log('发送查询请求:', fullUrl);
+      console.log('选中的部门:', selectedDepartments);
 
       /**
        * 服务端文件：server/src/routes/vehicles.ts
        * 接口：GET /api/v1/vehicles
        * Query 参数：keyword?: string, departments?: string[]
        */
-      const response = await fetch(`${baseUrl}/api/v1/vehicles?${params.toString()}`);
+      const response = await fetch(fullUrl);
       const data = await response.json();
+
+      console.log('查询结果:', data.success ? `成功，${data.data.length}条` : `失败: ${data.error}`);
 
       if (data.success) {
         setResults(data.data || []);
