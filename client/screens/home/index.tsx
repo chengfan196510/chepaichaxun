@@ -1,11 +1,13 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Screen } from '@/components/Screen';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { FontAwesome6 } from '@expo/vector-icons';
 import { createFormDataFile } from '@/utils';
+import { useSafeRouter } from '@/hooks/useSafeRouter';
+import * as DocumentPicker from 'expo-document-picker';
 
 interface VehicleInfo {
   id: string;
@@ -17,10 +19,13 @@ interface VehicleInfo {
 }
 
 export default function HomeScreen() {
+  const router = useSafeRouter();
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState<VehicleInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<any>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   const handleSearch = async () => {
@@ -194,6 +199,70 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePickImportFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'text/csv',
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      setSelectedFile(result.assets[0]);
+    } catch (error) {
+      console.error('文件选择失败:', error);
+      Alert.alert('错误', '文件选择失败');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      Alert.alert('提示', '请先选择Excel文件');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const file = await createFormDataFile(selectedFile.uri, selectedFile.name, selectedFile.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const formData = new FormData();
+      formData.append('file', file as any);
+
+      /**
+       * 服务端文件：server/src/routes/vehicles.ts
+       * 接口：POST /api/v1/vehicles/import
+       * Body 参数：file: File (Excel文件)
+       */
+      const response = await fetch(`${baseUrl}/api/v1/vehicles/import`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        Alert.alert(
+          '导入成功',
+          `总数据：${data.data.total} 条\n成功导入：${data.data.inserted} 条\n跳过：${data.data.skipped} 条`
+        );
+        setImportModalVisible(false);
+        setSelectedFile(null);
+        handleSearch(); // 刷新列表
+      } else {
+        Alert.alert('导入失败', data.error || '服务器错误');
+      }
+    } catch (error) {
+      console.error('导入失败:', error);
+      Alert.alert('错误', '网络请求失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Screen>
       <KeyboardAvoidingView
@@ -206,8 +275,25 @@ export default function HomeScreen() {
         >
           {/* 标题 */}
           <View style={styles.header}>
-            <Text style={styles.title}>车牌查询</Text>
-            <Text style={styles.subtitle}>快速查找学校车辆信息</Text>
+            <View style={styles.headerTop}>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>车牌查询</Text>
+                <Text style={styles.subtitle}>快速查找学校车辆信息</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.importButton}
+                onPress={() => {
+                  if (Platform.OS === 'web') {
+                    Alert.alert('提示', '导入功能仅在移动端可用');
+                  } else {
+                    setImportModalVisible(true);
+                  }
+                }}
+              >
+                <FontAwesome6 name="file-import" size={20} color="#111111" />
+                <Text style={styles.importButtonText}>导入</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* 输入区域 */}
@@ -294,6 +380,80 @@ export default function HomeScreen() {
             </View>
           )}
         </ScrollView>
+
+        {/* 导入模态框 */}
+        <Modal
+          visible={importModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setImportModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>数据导入</Text>
+                <TouchableOpacity onPress={() => setImportModalVisible(false)}>
+                  <FontAwesome6 name="xmark" size={20} color="#111111" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.modalBody}>
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoTitle}>Excel文件格式要求</Text>
+                  <Text style={styles.infoText}>• 必填字段：车主姓名、车牌号</Text>
+                  <Text style={styles.infoText}>• 选填字段：电话、部门、描述</Text>
+                  <Text style={styles.infoText}>• 支持 .xlsx, .xls, .csv 格式</Text>
+                </View>
+
+                {selectedFile ? (
+                  <View style={styles.filePreview}>
+                    <FontAwesome6 name="file-excel" size={48} color="#10B981" />
+                    <Text style={styles.fileName}>{selectedFile.name}</Text>
+                    <TouchableOpacity
+                      style={styles.changeButton}
+                      onPress={handlePickImportFile}
+                    >
+                      <Text style={styles.changeButtonText}>更换文件</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.uploadButton}
+                    onPress={handlePickImportFile}
+                  >
+                    <FontAwesome6 name="cloud-arrow-up" size={48} color="#888888" />
+                    <Text style={styles.uploadButtonText}>点击选择Excel文件</Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setImportModalVisible(false);
+                    setSelectedFile(null);
+                  }}
+                >
+                  <Text style={styles.cancelButtonText}>取消</Text>
+                </TouchableOpacity>
+                {selectedFile && (
+                  <TouchableOpacity
+                    style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                    onPress={handleImport}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.submitButtonText}>导入</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -313,6 +473,14 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 32,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerText: {
+    flex: 1,
+  },
   title: {
     fontSize: 32,
     fontWeight: '700',
@@ -325,6 +493,22 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#888888',
     lineHeight: 24,
+  },
+  importButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F7F7F7',
+    borderRadius: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+  },
+  importButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111111',
   },
   inputContainer: {
     marginBottom: 32,
@@ -433,5 +617,127 @@ const styles = StyleSheet.create({
     color: '#CCCCCC',
     marginTop: 8,
     textAlign: 'center',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '100%',
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ECECEC',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111111',
+  },
+  modalBody: {
+    flex: 1,
+    padding: 20,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#ECECEC',
+  },
+  infoCard: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111111',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#888888',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  uploadButton: {
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    borderRadius: 12,
+    paddingVertical: 32,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  uploadButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#111111',
+    marginTop: 12,
+  },
+  filePreview: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+  },
+  fileName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#111111',
+    marginTop: 12,
+  },
+  changeButton: {
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+  },
+  changeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111111',
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F7F7F7',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111111',
+  },
+  submitButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#111111',
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
