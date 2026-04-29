@@ -1,14 +1,23 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import multer from 'multer';
-import { FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { S3Storage, FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 
 const router = express.Router();
 
+// 初始化对象存储
+const storage = new S3Storage({
+  endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
+  accessKey: '',
+  secretKey: '',
+  bucketName: process.env.COZE_BUCKET_NAME,
+  region: 'cn-beijing',
+});
+
 // 配置multer接收文件
-const storage = multer.memoryStorage();
+const multerStorage = multer.memoryStorage();
 const upload = multer({
-  storage,
+  storage: multerStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB限制
   },
@@ -25,45 +34,48 @@ router.post('/ocr', upload.single('image'), async (req: Request, res: Response) 
       });
     }
 
-    // 将图片转换为base64并生成data URL
-    const mimeType = req.file.mimetype;
-    const imageBase64 = req.file.buffer.toString('base64');
-    const dataUrl = `data:${mimeType};base64,${imageBase64}`;
+    console.log('收到OCR请求，文件名:', req.file.originalname, '大小:', req.file.size);
 
-    // 使用HeaderUtils提取并转发headers
+    // 1. 上传图片到对象存储
+    const fileName = `ocr/${Date.now()}_${req.file.originalname}`;
+    console.log('开始上传到对象存储:', fileName);
+
+    const fileKey = await storage.uploadFile({
+      fileContent: req.file.buffer,
+      fileName,
+      contentType: req.file.mimetype,
+    });
+
+    console.log('上传成功，文件key:', fileKey);
+
+    // 2. 生成签名URL
+    const imageUrl = await storage.generatePresignedUrl({
+      key: fileKey,
+      expireTime: 86400, // 1天有效期
+    });
+
+    console.log('生成签名URL:', imageUrl);
+
+    // 3. 使用FetchClient调用OCR服务
     const customHeaders = HeaderUtils.extractForwardHeaders(req.headers as Record<string, string>);
     const config = new Config();
     const client = new FetchClient(config, customHeaders);
 
-    // 调用fetch-url提取图片中的文字
-    // 注意：fetch-url主要用于提取URL内容，对于base64图片，我们需要使用其他方式
-    // 这里我们假设后端会先上传图片到对象存储，然后使用URL调用OCR
-    // 但为了简化，我们使用第三方OCR服务
-
-    // 由于fetch-url不支持直接处理base64图片，我们需要先上传到对象存储
-    // 这里我们先返回一个提示，需要配合对象存储使用
-
-    // 临时方案：返回图片的base64供前端使用
-    // 实际生产环境应该上传到对象存储后使用URL
-
-    return res.json({
-      success: false,
-      error: 'OCR功能需要配合对象存储使用，请联系管理员配置',
-    });
-
-    // 正常实现应该如下：
-    /*
-    // 1. 上传到对象存储获取URL
-    const imageUrl = await uploadToObjectStorage(req.file);
-
-    // 2. 使用fetch-url进行OCR
+    console.log('开始OCR识别...');
     const response = await client.fetch(imageUrl);
 
-    // 3. 提取文字内容
-    const textContent = response.content
-      .filter(item => item.type === 'text')
-      .map(item => item.text)
-      .join('\n');
+    console.log('OCR响应:', response);
+
+    // 4. 提取文字内容
+    let textContent = '';
+    if (response.content && Array.isArray(response.content)) {
+      textContent = response.content
+        .filter((item: any) => item.type === 'text')
+        .map((item: any) => item.text)
+        .join('\n');
+    }
+
+    console.log('提取到文字内容，长度:', textContent.length);
 
     return res.json({
       success: true,
@@ -71,7 +83,6 @@ router.post('/ocr', upload.single('image'), async (req: Request, res: Response) 
         text: textContent,
       },
     });
-    */
   } catch (error) {
     console.error('OCR识别失败:', error);
     return res.status(500).json({
