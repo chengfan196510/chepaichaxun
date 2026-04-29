@@ -133,7 +133,7 @@ router.post('/import', upload.single('file'), async (req: Request, res: Response
         department: department ? String(department).trim() : null,
         description: description ? String(description).trim() : null,
       };
-    }).filter(Boolean); // 过滤掉无效数据
+    }).filter((v): v is NonNullable<typeof v> => v !== null); // 过滤掉无效数据并修复类型
 
     if (vehiclesToInsert.length === 0) {
       return res.status(400).json({
@@ -142,30 +142,66 @@ router.post('/import', upload.single('file'), async (req: Request, res: Response
       });
     }
 
-    // 批量插入数据库
+    // 批量插入数据库 - 逐条插入以处理重复数据
     const client = getSupabaseClient();
-    const { data: insertedData, error } = await client
-      .from('vehicle_infos')
-      .insert(vehiclesToInsert)
-      .select();
+    let insertedCount = 0;
+    let skippedCount = 0;
+    let skippedPlateNumbers: string[] = [];
 
-    if (error) {
-      // 检查是否是唯一约束冲突
-      if (error.code === '23505') {
-        return res.status(400).json({
-          success: false,
-          error: '导入失败：存在重复的车牌号',
-        });
+    console.log(`开始处理 ${vehiclesToInsert.length} 条数据`);
+
+    for (const vehicle of vehiclesToInsert) {
+      console.log(`处理车牌号: ${vehicle.license_plate}`);
+
+      // 检查车牌号是否已存在
+      const { data: existing, error: checkError } = await client
+        .from('vehicle_infos')
+        .select('id')
+        .eq('license_plate', vehicle.license_plate)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error(`检查失败 ${vehicle.license_plate}:`, checkError);
+        skippedCount++;
+        skippedPlateNumbers.push(`${vehicle.license_plate} (检查失败)`);
+        continue;
       }
-      throw new Error(`插入失败: ${error.message}`);
+
+      if (existing) {
+        // 车牌号已存在，跳过
+        console.log(`车牌号已存在，跳过: ${vehicle.license_plate}`);
+        skippedCount++;
+        skippedPlateNumbers.push(vehicle.license_plate);
+        continue;
+      }
+
+      // 插入新数据
+      console.log(`插入新数据: ${vehicle.license_plate}`);
+      const { data: inserted, error: insertError } = await client
+        .from('vehicle_infos')
+        .insert(vehicle)
+        .select();
+
+      if (insertError) {
+        console.error(`插入失败 ${vehicle.license_plate}:`, insertError);
+        skippedCount++;
+        skippedPlateNumbers.push(`${vehicle.license_plate} (插入失败)`);
+        continue;
+      }
+
+      console.log(`插入成功: ${vehicle.license_plate}`);
+      insertedCount++;
     }
+
+    console.log(`导入完成: 成功 ${insertedCount} 条，跳过 ${skippedCount} 条`);
 
     return res.json({
       success: true,
       data: {
         total: data.length,
-        inserted: insertedData?.length || 0,
-        skipped: data.length - (insertedData?.length || 0),
+        inserted: insertedCount,
+        skipped: skippedCount,
+        skippedDetails: skippedPlateNumbers,
       },
     });
   } catch (error) {

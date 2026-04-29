@@ -273,10 +273,14 @@ export default function HomeScreen() {
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert(
-          '导入成功',
-          `总数据：${data.data.total} 条\n成功导入：${data.data.inserted} 条\n跳过：${data.data.skipped} 条`
-        );
+        let message = `总数据：${data.data.total} 条\n成功导入：${data.data.inserted} 条\n跳过：${data.data.skipped} 条`;
+
+        // 如果有跳过的车牌号，显示详细信息
+        if (data.data.skipped > 0 && data.data.skippedDetails && data.data.skippedDetails.length > 0) {
+          message += `\n\n跳过的车牌号：\n${data.data.skippedDetails.join('\n')}`;
+        }
+
+        Alert.alert('导入成功', message);
         setImportModalVisible(false);
         setSelectedFile(null);
         setWebFileSelected(false);
