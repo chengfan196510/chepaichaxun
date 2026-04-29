@@ -33,6 +33,14 @@ router.get('/', async (req: Request, res: Response) => {
     const keyword = req.query.keyword as string;
     const departments = req.query.departments as string[] | string;
 
+    // 详细日志
+    console.log('========== 查询请求 ==========');
+    console.log('原始 req.query:', req.query);
+    console.log('keyword:', keyword);
+    console.log('departments:', departments);
+    console.log('departments类型:', Array.isArray(departments) ? 'array' : typeof departments);
+    console.log('============================');
+
     const client = getSupabaseClient();
     let query = client.from('vehicle_infos').select('*');
 
@@ -52,8 +60,15 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    // 处理部门筛选
-    const deptArray = Array.isArray(departments) ? departments : [departments];
+    // 处理部门筛选 - 支持逗号分隔的字符串或数组
+    let deptArray: string[];
+    if (Array.isArray(departments)) {
+      deptArray = departments;
+    } else {
+      // 假设是逗号分隔的字符串
+      deptArray = departments.split(',').map(d => d.trim());
+    }
+
     if (deptArray.length > 0) {
       // 使用in函数筛选部门
       query = query.in('department', deptArray);

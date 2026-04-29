@@ -45,14 +45,24 @@ export default function HomeScreen() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const toggleDepartment = (dept: string) => {
-    if (selectedDepartments.includes(dept)) {
-      // 如果至少选中一个，才允许取消
-      if (selectedDepartments.length > 1) {
-        setSelectedDepartments(selectedDepartments.filter(d => d !== dept));
+    console.log('切换部门:', dept, '当前选中:', selectedDepartments);
+    setSelectedDepartments(prev => {
+      if (prev.includes(dept)) {
+        // 如果至少选中一个，才允许取消
+        if (prev.length > 1) {
+          const newDepts = prev.filter(d => d !== dept);
+          console.log('取消选中:', newDepts);
+          return newDepts;
+        } else {
+          console.log('保持选中（至少保留一个）:', prev);
+          return prev;
+        }
+      } else {
+        const newDepts = [...prev, dept];
+        console.log('添加选中:', newDepts);
+        return newDepts;
       }
-    } else {
-      setSelectedDepartments([...selectedDepartments, dept]);
-    }
+    });
   };
 
   const handleSearch = async () => {
@@ -65,10 +75,11 @@ export default function HomeScreen() {
         params.push(`keyword=${encodeURIComponent(keyword)}`);
       }
 
-      // 添加部门筛选 - 手动构建参数
-      selectedDepartments.forEach(dept => {
-        params.push(`departments=${encodeURIComponent(dept)}`);
-      });
+      // 将多个部门用逗号连接成一个字符串
+      if (selectedDepartments.length > 0) {
+        const departmentsStr = selectedDepartments.map(dept => encodeURIComponent(dept)).join(',');
+        params.push(`departments=${departmentsStr}`);
+      }
 
       const fullUrl = `${baseUrl}/api/v1/vehicles?${params.join('&')}`;
       console.log('发送查询请求:', fullUrl);
@@ -77,7 +88,7 @@ export default function HomeScreen() {
       /**
        * 服务端文件：server/src/routes/vehicles.ts
        * 接口：GET /api/v1/vehicles
-       * Query 参数：keyword?: string, departments?: string[]
+       * Query 参数：keyword?: string, departments?: string (逗号分隔的多个部门)
        */
       const response = await fetch(fullUrl);
       const data = await response.json();
@@ -384,6 +395,10 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* 调试信息 */}
+          <View style={styles.debugInfo}>
+            <Text style={styles.debugText}>已选中: {selectedDepartments.join(', ')}</Text>
+          </View>
         </View>
 
         {/* 搜索区域 */}
@@ -638,6 +653,19 @@ const styles = StyleSheet.create({
   },
   departmentButtonTextSelected: {
     color: '#FFFFFF',
+  },
+  debugInfo: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FDF8F0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E8DED4',
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#8B7D6B',
   },
   // 搜索区域
   searchContainer: {
