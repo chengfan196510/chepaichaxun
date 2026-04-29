@@ -40,7 +40,7 @@ export default function HomeScreen() {
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [webFileSelected, setWebFileSelected] = useState<boolean>(false);
   const [webFileName, setWebFileName] = useState<string>('');
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['教师车辆', '后勤车辆']);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['集团车辆', '教师车辆', '后勤车辆']);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   const toggleDepartment = (dept: string) => {
