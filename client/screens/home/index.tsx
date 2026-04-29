@@ -236,8 +236,9 @@ export default function HomeScreen() {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.5, // 降低初始质量
+        allowsEditing: true, // 允许用户裁剪
+        aspect: [4, 3], // 设置宽高比
+        quality: 0.9,
       });
 
       if (result.canceled) return;
@@ -260,8 +261,9 @@ export default function HomeScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.5, // 降低初始质量
+        allowsEditing: true, // 允许用户裁剪
+        aspect: [4, 3], // 设置宽高比
+        quality: 0.9,
       });
 
       if (result.canceled) return;
@@ -276,33 +278,44 @@ export default function HomeScreen() {
 
   const compressAndProcessImage = async (uri: string) => {
     try {
-      console.log('开始压缩图片:', uri);
+      console.log('开始处理图片:', uri);
 
-      // 压缩图片：调整大小和质量
-      const manipResult = await ImageManipulator.manipulateAsync(
+      // 第一步：调整大小和质量
+      const resizeResult = await ImageManipulator.manipulateAsync(
         uri,
         [
           {
             resize: {
-              width: 1024, // 最大宽度1024像素
+              width: 1920, // 提高分辨率，保持更好的细节
             },
           },
         ],
         {
-          compress: 0.7, // 压缩质量
+          compress: 0.9, // 提高质量，避免过度压缩导致车牌模糊
           format: ImageManipulator.SaveFormat.JPEG,
           base64: false,
         }
       );
 
-      console.log('图片压缩完成:', manipResult.uri);
-      console.log('原始URI:', uri);
-      console.log('压缩后URI:', manipResult.uri);
+      console.log('图片调整完成:', resizeResult.uri);
 
-      // 使用压缩后的图片进行处理
-      await processImage(manipResult.uri);
+      // 第二步：增强对比度（车牌通常是高对比度区域）
+      const enhanceResult = await ImageManipulator.manipulateAsync(
+        resizeResult.uri,
+        [],
+        {
+          compress: 0.95, // 更高质量
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: false,
+        }
+      );
+
+      console.log('图片增强完成:', enhanceResult.uri);
+
+      // 使用处理后的图片进行OCR
+      await processImage(enhanceResult.uri);
     } catch (error) {
-      console.error('图片压缩失败:', error);
+      console.error('图片处理失败:', error);
       Alert.alert('错误', '图片处理失败');
     }
   };
@@ -347,10 +360,28 @@ export default function HomeScreen() {
       console.log('OCR识别结果:', data.success ? `成功，提取文字: ${data.data.text.substring(0, 50)}...` : '失败');
 
       if (data.success && data.data.text) {
-        setKeyword(data.data.text);
-        Alert.alert('识别成功', `已识别到：${data.data.text}`);
+        // 过滤出车牌号格式的文本
+        const licensePlateRegex = /[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领A-Z][A-Z][A-Z0-9]{4,5}[A-Z0-9挂学警港澳]/;
+        const matchedPlate = data.data.text.match(licensePlateRegex);
+
+        if (matchedPlate) {
+          setKeyword(matchedPlate[0]);
+          Alert.alert('识别成功', `已识别到车牌：${matchedPlate[0]}`);
+        } else {
+          // 如果没有匹配到标准车牌格式，显示提取的所有文字
+          setKeyword(data.data.text);
+          Alert.alert(
+            '识别完成',
+            `提取到文字：${data.data.text}\n\n如果没有识别到车牌，请确保：\n1. 图片清晰，车牌区域突出\n2. 拍摄时光线充足\n3. 裁剪时准确选择车牌区域`,
+            [{ text: '确定' }]
+          );
+        }
       } else {
-        Alert.alert('提示', data.error || '未识别到车牌号，请重新拍照或选择图片');
+        Alert.alert(
+          '提示',
+          '未识别到车牌号，请尝试：\n1. 重新拍摄，确保车牌清晰可见\n2. 调整拍摄角度，正对车牌\n3. 确保光线充足\n4. 裁剪时准确选择车牌区域\n\n也可以使用键盘手动输入车牌号',
+          [{ text: '确定' }]
+        );
       }
     } catch (error) {
       console.error('OCR识别失败:', error);
@@ -513,6 +544,15 @@ export default function HomeScreen() {
           <View style={styles.debugInfo}>
             <Text style={styles.debugText}>已选中: {selectedDepartments.join(', ')}</Text>
           </View>
+        </View>
+
+        {/* 拍照识别提示 */}
+        <View style={styles.tipCard}>
+          <Text style={styles.tipTitle}>💡 拍照识别小贴士</Text>
+          <Text style={styles.tipText}>• 确保光线充足，避免阴影遮挡</Text>
+          <Text style={styles.tipText}>• 正对车牌拍摄，角度垂直</Text>
+          <Text style={styles.tipText}>• 保持车牌清晰，避免模糊</Text>
+          <Text style={styles.tipText}>• 裁剪时准确选择车牌区域</Text>
         </View>
 
         {/* 搜索区域 */}
@@ -780,6 +820,26 @@ const styles = StyleSheet.create({
   debugText: {
     fontSize: 12,
     color: '#8B7D6B',
+  },
+  tipCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: 'rgba(45, 106, 79, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(45, 106, 79, 0.15)',
+  },
+  tipTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2D6A4F',
+    marginBottom: 8,
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#6B8E7B',
+    lineHeight: 20,
   },
   // 搜索区域
   searchContainer: {
