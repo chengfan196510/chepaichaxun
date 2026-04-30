@@ -1,18 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "server/api/**/*.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server/api/$1"
-    }
-  ],
-  "env": {
-    "EXPO_PUBLIC_BACKEND_BASE_URL": "/api"
-  }
+  "framework": null,
+  "buildCommand": "cd client && npx expo export:web && cd ..",
+  "outputDirectory": "client/dist",
+  "installCommand": "pnpm install"
 }
