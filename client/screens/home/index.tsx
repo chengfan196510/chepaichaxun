@@ -13,6 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
+// 后端API地址 - 部署到Vercel
+const BACKEND_URL = 'https://vehicleapp-omega.vercel.app';
+
 interface VehicleInfo {
   id: string;
   owner_name: string;
@@ -69,7 +72,7 @@ export default function HomeScreen() {
   const handleSearch = async () => {
     setLoading(true);
     try {
-      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const baseUrl = BACKEND_URL;
       const params: string[] = [];
 
       if (keyword.trim()) {
@@ -177,7 +180,7 @@ export default function HomeScreen() {
         encoding: 'base64',
       });
 
-      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const baseUrl = BACKEND_URL;
       const audioFile = await createFormDataFile(uri, 'audio.m4a', 'audio/m4a');
       const formData = new FormData();
       formData.append('audio', audioFile as any);
@@ -324,7 +327,7 @@ export default function HomeScreen() {
     try {
       setLoading(true);
 
-      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const baseUrl = BACKEND_URL;
       const imageFile = await createFormDataFile(uri, 'image.jpg', 'image/jpeg');
       const formData = new FormData();
       formData.append('image', imageFile as any);
@@ -454,7 +457,7 @@ export default function HomeScreen() {
 
     setLoading(true);
     try {
-      const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const baseUrl = BACKEND_URL;
       const formData = new FormData();
 
       if (Platform.OS === 'web') {
