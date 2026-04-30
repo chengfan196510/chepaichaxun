@@ -1,7 +1,12 @@
 {
   "framework": null,
   "buildCommand": "pnpm install && pnpm build",
-  "outputDirectory": null,
+  "outputDirectory": "",
   "installCommand": "pnpm install",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "serverless": {
+    "runtime": "nodejs24.x",
+    "memory": 512,
+    "maxDuration": 30
+  }
 }
