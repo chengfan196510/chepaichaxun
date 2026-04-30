@@ -1,7 +1,14 @@
 {
   "framework": null,
-  "buildCommand": "pnpm install && pnpm build",
-  "outputDirectory": "",
+  "buildCommand": "cd server && pnpm install && pnpm build",
+  "outputDirectory": null,
   "installCommand": "pnpm install",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "functions": {
+    "server/**/*.ts": {
+      "runtime": "nodejs24.x",
+      "memory": 512,
+      "maxDuration": 30
+    }
+  }
 }

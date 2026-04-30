@@ -1,6 +1,6 @@
 {
+  "framework": null,
   "buildCommand": "npx expo export -p web",
   "outputDirectory": "dist",
-  "installCommand": "pnpm install",
-  "framework": null
+  "installCommand": "pnpm install"
 }
