@@ -1,6 +1,7 @@
 {
   "framework": null,
-  "buildCommand": "cd client && npx expo export:web && cd ..",
-  "outputDirectory": "client/dist",
-  "installCommand": "pnpm install"
+  "buildCommand": "pnpm install",
+  "outputDirectory": "_static",
+  "installCommand": "pnpm install",
+  "regions": ["iad1"]
 }
